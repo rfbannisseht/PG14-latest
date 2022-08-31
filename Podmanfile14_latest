@@ -1,0 +1,115 @@
+#FROM alpine:3.13.12
+FROM alpine:3.15.6
+
+ARG running_builddeps="xz xz-libs tar ca-certificates m4 musl-dev  musl bison autoconf automake coreutils flex gcc libc-dev libedit-dev libxml2-dev \
+    libxslt-dev libgcc libstdc++ linux-headers gettext libffi llvm12-libs llvm12 llvm12-dev clang g++ make perl-utils perl perl-ipc-run python3-dev python3 py3-pip \
+    util-linux-dev tini ncurses libintl gettext openssl openssl-dev gzip db krb5-conf libcom_err readline sqlite-libs cyrus-sasl heimdal-libs \
+    zlib-dev icu-dev bind-tools readline readline-dev bash tzdata make \
+    su-exec pkgconf libuuid libressl3.4-libcrypto libressl-dev git krb5 \
+    alpine-sdk py-cffi linux-headers krb5-pkinit krb5-dev krb5 openssl-dev bsd-compat-headers openssl " 
+
+# alpine-sdk python-dev py-cffi linux-headers musl-dev python3-dev g++
+#ARG postgresql-rundeps="tzdata" 
+
+ENV PGPASSWORD="welkom01" 
+ENV LANG="en_US.utf8" 
+ENV PG_MAJOR="14"
+ENV PG_VERSION="14.5"
+ENV PGUSER="postgres"
+ENV PGDATA="/pg02/${PG_MAJOR}/data"
+ARG PG_EXTENSION="tar.gz"
+ARG PGBIN="/pg01/${PG_MAJOR}/${PG_DIR}"
+ARG PGDIR2="/pg03/${PG_MAJOR}/archive"
+ARG PGDIR3="/pg04/${PG_MAJOR}/"
+ARG PG_HOME="${PGBIN}" 
+ARG PG_EXTENSION="tar.gz"
+ARG TZ="Europe/amsterdam" 
+
+#--disable-rpath \ #Perl libperl.so doesn't exist in the ldconfig path
+
+RUN set -eux \
+	&& addgroup -g 70 -S postgres \
+	&& mkdir -p ${PGBIN} \
+	&& mkdir -p ${PG_HOME} \
+	&& mkdir -p ${PGDATA} \
+  && mkdir -p ${PGDIR2} \
+  && mkdir -p ${PGDIR3} \
+  && mkdir -p /usr/src/postgresql \
+  && adduser -u 70 -S -G postgres -s /bin/sh -h ${PG_HOME} postgres \
+  && chown -R postgres:postgres /pg* \
+  && mkdir /docker-entrypoint-initdb.d \
+  && apk -U upgrade \
+  && mkdir -p /var/cache/apk \
+	&& ln -s /var/cache/apk /etc/apk/cache \
+	#&& apk add --no-cache --virtual $fetch_deps \
+	&& apk add --no-cache --virtual $running_builddeps \
+	&& cd /tmp \
+	&& wget -O postgresql-${PG_VERSION}.${PG_EXTENSION}  "https://ftp.postgresql.org/pub/source/v$PG_VERSION/postgresql-${PG_VERSION}.${PG_EXTENSION}" \
+	&& tar -xf  postgresql-${PG_VERSION}.${PG_EXTENSION} -C  /usr/src/postgresql --strip-components 1 \
+	&& rm postgresql-${PG_VERSION}.${PG_EXTENSION} \
+	&& apk add --no-cache --virtual $running_builddeps \
+	&& cd /usr/src/postgresql \
+	&& ./configure --prefix="${PGBIN}" \
+		--disable-rpath \ 
+		--with-uuid=e2fs \
+		--with-gnu-ld \
+		--with-pgport=5432 \
+		--with-system-tzdata=/usr/share/zoneinfo \
+		--prefix=/usr/local \
+		--with-includes=/usr/local/include \
+		--with-libraries=/usr/local/lib \
+##--with-krb5 \
+##--with-gssapi \
+##--with-ldap \
+#--with-tcl \
+##--with-perl \
+		--with-python \
+##--with-pam \
+		--with-openssl \
+		--with-includes=/usr/local/ssl/include \
+		--with-libraries=/usr/local/ssl/lib \
+		--with-libxml \
+		--with-libxslt \
+		--with-icu \
+		--with-llvm \
+	&& make  world \
+	&& make install-world \
+	&& ln -sf python3 /usr/bin/python \
+        && cd / \
+	&& apk del $running_builddeps \
+	&& runDeps="$( \
+		scanelf --needed --nobanner --format '%n#p' --recursive /usr/local \
+			| tr ',' '\n' \
+			| sort -u \
+			| awk 'system("[ -e /usr/local/lib/" $1 " ]") == 0 { next } { print "so:" $1 }' \
+	)" \
+	#&& apk add --no-cache --virtual postgresql-rundeps \
+	&& apk add  $runDeps \
+		bash \
+		su-exec \
+	&& rm -rf /usr/src/postgresql \
+		/usr/local/share/doc \
+		/usr/local/share/man  \
+  && sed -ri "s!^#?(listen_addresses)\s*=\s*\S+.*!\1 = '*'!" /usr/local/share/postgresql/postgresql.conf.sample \
+  && chown  postgres:postgres /usr/local/share/postgresql/postgresql.conf.sample \
+	&& chown -R postgres:postgres /usr/local/bin/*  \
+	&& ln -s /usr/local/bin ${PGBIN} \
+	&& ln -s /usr/local/lib ${PGBIN} \ 
+	&& ln -s /usr/local/share ${PGBIN} \
+	&& ln -s /usr/local/include ${PGBIN} \
+	&& mkdir -p /var/run/postgresql \
+	&& chown -R postgres:postgres /var/run/postgresql \
+	&& chown -R postgres:postgres /usr/local/bin/ \
+	&& apk add tzdata \
+	&& chmod 2777 /var/run/postgresql \
+	&& echo ${TZ} > /etc/timezone \
+	&&  rm -rf /var/cache/apk/*
+
+COPY podman-entrypoint.sh /usr/local/bin/
+
+ENTRYPOINT ["podman-entrypoint.sh"]
+
+EXPOSE  5432/tcp
+CMD ["postgres"]
+#CMD ["/xxxx/bin/postgres", "-D", "/PGDATA/main", "-c", "config_file=/dir/postgresql.conf"]
+#VOLUME  ["/etc/postgresql", "/var/log/postgresql", "/var/lib/postgresql"]
