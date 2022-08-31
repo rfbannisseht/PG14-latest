@@ -41,8 +41,6 @@ RUN set -eux \
   && apk -U upgrade \
   && mkdir -p /var/cache/apk \
 	&& ln -s /var/cache/apk /etc/apk/cache \
-	#&& apk add --no-cache --virtual $fetch_deps \
-	&& apk add --no-cache --virtual $running_builddeps \
 	&& cd /tmp \
 	&& wget -O postgresql-${PG_VERSION}.${PG_EXTENSION}  "https://ftp.postgresql.org/pub/source/v$PG_VERSION/postgresql-${PG_VERSION}.${PG_EXTENSION}" \
 	&& tar -xf  postgresql-${PG_VERSION}.${PG_EXTENSION} -C  /usr/src/postgresql --strip-components 1 \
